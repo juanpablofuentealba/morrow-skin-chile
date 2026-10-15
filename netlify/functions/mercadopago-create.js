@@ -1,4 +1,4 @@
-import { CONFIG, buildReturnUrl } from './lib/config.js'
+import { MERCADOPAGO, WEBPAY } from './lib/config.js'
 
 const MP_API = 'https://api.mercadopago.com/checkout/preferences'
 
@@ -6,12 +6,11 @@ export const handler = async (event) => {
   try {
     const body = JSON.parse(event.body || '{}')
     const amount = Math.round(Number(body.amount))
-    const accessToken = CONFIG.mercadopago.accessToken
 
     if (!amount || amount <= 0) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Monto inválido' }) }
     }
-    if (!accessToken || accessToken === 'TEST-00000000000000000000000000000000') {
+    if (!MERCADOPAGO.accessToken) {
       return {
         statusCode: 200,
         body: JSON.stringify({
@@ -25,41 +24,28 @@ export const handler = async (event) => {
     const items = (body.items || []).map((item) => ({
       id: String(item.id),
       title: item.name,
-      quantity: item.quantity,
+      quantity: Number(item.quantity) || 1,
       unit_price: Number(item.price),
       currency_id: 'CLP',
-    }))
+    })).filter((it) => it.unit_price > 0)
 
     if (items.length === 0) {
-      items.push({
-        id: 'morrow',
-        title: 'Pedido Morrow Skin',
-        quantity: 1,
-        unit_price: amount,
-        currency_id: 'CLP',
-      })
+      items.push({ id: 'morrow', title: 'Pedido Morrow Skin', quantity: 1, unit_price: amount, currency_id: 'CLP' })
     }
 
-    const returnUrl = buildReturnUrl(CONFIG.webpay.baseReturnUrl, '/confirmacion')
+    const returnUrl = WEBPAY.returnUrl
     const payload = {
       items,
       external_reference: externalReference,
-      notification_url: `${CONFIG.webpay.baseReturnUrl}/api/mercadopago-webhook`,
-      back_urls: {
-        success: returnUrl,
-        pending: returnUrl,
-        failure: returnUrl,
-      },
+      notification_url: `${WEBPAY.returnUrl.replace('/confirmacion', '')}/api/mercadopago-webhook`,
+      back_urls: { success: returnUrl, pending: returnUrl, failure: returnUrl },
       auto_return: 'approved',
       purpose: 'normal_checkout',
     }
 
     const res = await fetch(MP_API, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${MERCADOPAGO.accessToken}` },
       body: JSON.stringify(payload),
     })
 
@@ -81,9 +67,6 @@ export const handler = async (event) => {
     }
   } catch (error) {
     console.error('mercadopago-create error', error)
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ error: error.message || 'No se pudo iniciar el pago con Mercado Pago' }),
-    }
+    return { statusCode: 500, body: JSON.stringify({ error: error.message || 'No se pudo iniciar el pago con Mercado Pago' }) }
   }
 }

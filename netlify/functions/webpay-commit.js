@@ -1,5 +1,4 @@
-import { WebpayPlus, IntegrationCommerceCodes, IntegrationApiKeys } from 'transbank-sdk'
-import { CONFIG } from './lib/config.js'
+import { WEBPAY, webpayHeaders } from './lib/config.js'
 
 export const handler = async (event) => {
   try {
@@ -10,22 +9,23 @@ export const handler = async (event) => {
       return { statusCode: 400, body: JSON.stringify({ error: 'Falta el token de transacción' }) }
     }
 
-    const tx = CONFIG.webpay.isProduction
-      ? WebpayPlus.Transaction.buildForProduction(CONFIG.webpay.commerceCode, CONFIG.webpay.apiKey)
-      : WebpayPlus.Transaction.buildForIntegration(CONFIG.webpay.commerceCode, CONFIG.webpay.apiKey)
+    const res = await fetch(`${WEBPAY.basePath}/transactions/${token}`, {
+      method: 'PUT',
+      headers: webpayHeaders(),
+    })
 
-    const response = await tx.commit(token)
-
-    const ok = response.status === 'AUTHORIZED'
-    return {
-      statusCode: 200,
-      body: JSON.stringify({ ok, response }),
+    const data = await res.json()
+    if (!res.ok) {
+      return {
+        statusCode: res.status,
+        body: JSON.stringify({ ok: false, error: data.error_message || 'No se pudo confirmar el pago' }),
+      }
     }
+
+    const ok = data.status === 'AUTHORIZED'
+    return { statusCode: 200, body: JSON.stringify({ ok, response: data }) }
   } catch (error) {
     console.error('webpay-commit error', error)
-    return {
-      statusCode: 500,
-      body: JSON.stringify({ ok: false, error: error.message || 'No se pudo confirmar el pago' }),
-    }
+    return { statusCode: 500, body: JSON.stringify({ ok: false, error: error.message || 'No se pudo confirmar el pago' }) }
   }
 }
